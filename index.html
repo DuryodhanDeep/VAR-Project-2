@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AR Navigation - Smart Waypoints</title>
+  
+  <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+  <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+  
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      font-family: Arial, sans-serif;
+    }
+    #ui-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      z-index: 1000;
+      pointer-events: none;
+    }
+    #controls {
+      background: rgba(0, 0, 0, 0.8);
+      color: white;
+      padding: 15px;
+      pointer-events: all;
+    }
+    #controls input, #controls button {
+      margin: 5px 0;
+      padding: 8px;
+      width: 100%;
+      box-sizing: border-box;
+      font-size: 14px;
+    }
+    #controls button {
+      background: #4CAF50;
+      color: white;
+      border: none;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    #controls button:hover {
+      background: #45a049;
+    }
+    #status {
+      background: rgba(0, 0, 0, 0.7);
+      color: white;
+      padding: 10px;
+      margin-top: 10px;
+      font-size: 12px;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    #instructions {
+      background: rgba(33, 150, 243, 0.9);
+      color: white;
+      padding: 15px;
+      margin-top: 10px;
+      font-size: 14px;
+      font-weight: bold;
+    }
+    .collapsed {
+      max-height: 50px;
+      overflow: hidden;
+    }
+    #toggle-panel {
+      background: rgba(0, 0, 0, 0.8);
+      color: white;
+      padding: 10px;
+      text-align: center;
+      cursor: pointer;
+      pointer-events: all;
+    }
+    #destination-reached-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.85);
+      z-index: 2000;
+      pointer-events: all;
+      display: none;
+      justify-content: center;
+      align-items: center;
+      flex-direction: column;
+      text-align: center;
+    }
+    #destination-reached-overlay h1 {
+      color: #4CAF50;
+      font-size: 2.5em;
+      margin: 0;
+    }
+    #destination-reached-overlay p {
+      color: white;
+      font-size: 1.2em;
+      margin: 10px 0 30px 0;
+    }
+    #destination-reached-overlay button {
+      background: #f44336;
+      color: white;
+      border: none;
+      cursor: pointer;
+      border-radius: 8px;
+      padding: 15px 30px;
+      font-size: 1.2em;
+      font-weight: bold;
+    }
+    #compass-debug {
+      background: rgba(255, 165, 0, 0.8);
+      color: white;
+      padding: 10px;
+      font-size: 11px;
+      margin-top: 10px;
+      line-height: 1.4;
+    }
+    .accuracy-indicator {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-left: 5px;
+    }
+    .accuracy-good { background: #4CAF50; }
+    .accuracy-medium { background: #FFC107; }
+    .accuracy-poor { background: #F44336; }
+  </style>
+</head>
+<body>
+  
+  <div id="ui-overlay">
+    <div id="toggle-panel" onclick="togglePanel()">
+      ▼ Show/Hide Controls
+    </div>
+    <div id="controls" class="collapsed">
+      <h3 style="margin-top: 0;">AR Navigation Setup</h3>
+      
+      <div>
+        <label>Destination (Lat, Lon):</label>
+        <input type="text" id="destination" value="26.187870872941197, 91.70008699559571">
+        <small style="color: #aaa;">IIT Guwahati area</small>
+      </div>
+      
+      <button onclick="startNavigation()">Start Navigation</button>
+      <button onclick="stopNavigation()">Stop Navigation</button>
+      <button onclick="testArrow()">Test Arrow</button>
+      
+      <div id="status">
+        <strong>Status:</strong> Waiting to start...
+      </div>
+      
+      <div id="compass-debug" style="display: none;">
+        <strong>Debug Info:</strong><br>
+        GPS: <span id="gps-info">--</span> <span id="gps-accuracy" class="accuracy-indicator"></span><br>
+        Compass: <span id="compass-heading">--</span>° <span id="compass-accuracy" class="accuracy-indicator"></span><br>
+        Target: <span id="target-bearing">--</span>° | Arrow: <span id="arrow-rotation">--</span>°<br>
+        Waypoint: <span id="waypoint-info">--</span> | Dist: <span id="distance-info">--</span>m<br>
+        Smoothing: <span id="smoothing-info">--</span>
+      </div>
+    </div>
+    
+    <div id="instructions" style="display: none;">
+      Next: <span id="instruction-text">Calculating route...</span>
+    </div>
+  </div>
+
+  <div id="destination-reached-overlay">
+    <h1>🎉 Destination Reached!</h1>
+    <p>You have arrived at your location.</p>
+    <button onclick="stopNavigation()">Exit Navigation</button>
+  </div>
+
+  <a-scene
+    vr-mode-ui="enabled: false"
+    arjs="sourceType: webcam; videoTexture: true; debugUIEnabled: false;"
+    renderer="antialias: true; alpha: true"
+  >
+    <a-camera id="camera" gps-camera rotation-reader>
+      <a-entity id="nav-arrow" position="0 -0.5 -2.5" visible="false">
+        <a-entity id="arrow-rotator" rotation="0 0 0">
+          <a-cone 
+            position="0 0 -0.5"
+            rotation="-90 0 0"
+            radius-bottom="0.4"
+            radius-top="0"
+            height="1.2"
+            color="#FF0000"
+            material="shader: flat; opacity: 0.9"
+          ></a-cone>
+          
+          <a-cylinder
+            position="0 0 0.3"
+            radius="0.15"
+            height="0.8"
+            color="#FF0000"
+            material="shader: flat; opacity: 0.9"
+          ></a-cylinder>
+          
+          <a-sphere
+            id="arrow-tip"
+            position="0 0 -1.1"
+            radius="0.25"
+            color="#FFFF00"
+            material="shader: flat; emissive: #FFFF00; emissiveIntensity: 0.5"
+            animation="property: scale; to: 1.2 1.2 1.2; dur: 1000; dir: alternate; loop: true; easing: easeInOutQuad"
+          ></a-sphere>
+          
+          <a-torus
+            position="0 0 -0.5"
+            rotation="90 0 0"
+            radius="0.5"
+            radius-tubular="0.05"
+            color="#FF6600"
+            material="shader: flat; opacity: 0.6"
+          ></a-torus>
+        </a-entity>
+      </a-entity>
+    </a-camera>
+  </a-scene>
+
+  <script>
+    // Navigation state
+    let navigationActive = false;
+    let currentPosition = null;
+    let routeWaypoints = [];
+    let currentWaypointIndex = 0;
+    let finalDestination = null;
+    
+    // Thresholds
+    const WAYPOINT_REACHED_THRESHOLD = 15; // meters
+    const DESTINATION_REACHED_THRESHOLD = 10; // meters
+    
+    // *** IMPROVEMENT: Removed unused variable ***
+    // const OFF_ROUTE_THRESHOLD = 50; 
+    
+    // Sensor smoothing
+    let compassReadings = [];
+    const COMPASS_SMOOTHING_SAMPLES = 5;
+    let smoothedCompassHeading = 0;
+    let lastArrowRotation = 0;
+    const ARROW_SMOOTHING_FACTOR = 0.3; 
+    
+    // GPS tracking
+    let gpsAccuracy = 999;
+    let lastGPSUpdate = Date.now();
+    
+    let updateInterval = null;
+    let animationFrameId = null;
+
+    const MAPBOX_TOKEN = "pk.eyJ1IjoiYXJ5YW5kb25sb25kb24iLCJhIjoiY21odzlnbm90MDA2eTJqcXZkamtxajdjOCJ9.bqShLStraxUBB1ANLi-6ZQ";
+
+    // --- Your excellent UI, Sensor, and Math functions are unchanged ---
+    
+    function togglePanel() {
+      const controls = document.getElementById('controls');
+      controls.classList.toggle('collapsed');
+    }
+
+    function logStatus(message) {
+      const status = document.getElementById('status');
+      const timestamp = new Date().toLocaleTimeString();
+      status.innerHTML = `<strong>[${timestamp}]</strong> ${message}<br>` + status.innerHTML;
+    }
+
+    function updateCompassSmoothing(newHeading) {
+      compassReadings.push(newHeading);
+      if (compassReadings.length > COMPASS_SMOOTHING_SAMPLES) {
+        compassReadings.shift();
+      }
+      
+      let sinSum = 0, cosSum = 0;
+      compassReadings.forEach(heading => {
+        const rad = heading * Math.PI / 180;
+        sinSum += Math.sin(rad);
+        cosSum += Math.cos(rad);
+      });
+      
+      let avgRad = Math.atan2(sinSum / compassReadings.length, cosSum / compassReadings.length);
+      smoothedCompassHeading = (avgRad * 180 / Math.PI + 360) % 360;
+      
+      return smoothedCompassHeading;
+    }
+
+    function startCompassTracking() {
+      if (window.DeviceOrientationEvent) {
+        window.addEventListener('deviceorientationabsolute', handleOrientation, true);
+        window.addEventListener('deviceorientation', handleOrientation, true);
+        logStatus('Compass tracking started');
+      } else {
+        logStatus('Device orientation not supported');
+      }
+    }
+
+    function handleOrientation(event) {
+      let heading = event.webkitCompassHeading || event.alpha;
+      
+      if (heading !== null && heading !== undefined) {
+        if (event.alpha !== undefined && !event.webkitCompassHeading) {
+          heading = 360 - heading;
+        }
+        
+        updateCompassSmoothing(heading);
+        
+        document.getElementById('compass-heading').textContent = Math.round(smoothedCompassHeading);
+        
+        const compassAccuracy = event.webkitCompassAccuracy || 15;
+        const accuracyEl = document.getElementById('compass-accuracy');
+        if (compassAccuracy < 15) {
+          accuracyEl.className = 'accuracy-indicator accuracy-good';
+        } else if (compassAccuracy < 25) {
+          accuracyEl.className = 'accuracy-indicator accuracy-medium';
+        } else {
+          accuracyEl.className = 'accuracy-indicator accuracy-poor';
+        }
+      }
+    }
+
+    function startPositionTracking() {
+      if (navigator.geolocation) {
+        navigator.geolocation.watchPosition(
+          (position) => {
+            currentPosition = {
+              lat: position.coords.latitude,
+              lon: position.coords.longitude
+            };
+            gpsAccuracy = position.coords.accuracy || 999;
+            lastGPSUpdate = Date.now();
+            
+            document.getElementById('gps-info').textContent = 
+              `${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`;
+            
+            const gpsAccuracyEl = document.getElementById('gps-accuracy');
+            if (gpsAccuracy < 10) {
+              gpsAccuracyEl.className = 'accuracy-indicator accuracy-good';
+            } else if (gpsAccuracy < 25) {
+              gpsAccuracyEl.className = 'accuracy-indicator accuracy-medium';
+            } else {
+              gpsAccuracyEl.className = 'accuracy-indicator accuracy-poor';
+            }
+            
+            logStatus(`GPS: ${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)} (±${Math.round(gpsAccuracy)}m)`);
+          },
+          (error) => {
+            logStatus(`GPS Error: ${error.message}`);
+          },
+          {
+            enableHighAccuracy: true,
+            maximumAge: 0,
+            timeout: 5000
+          }
+        );
+      } else {
+        logStatus('Geolocation not supported');
+      }
+    }
+
+    function calculateBearing(lat1, lon1, lat2, lon2) {
+      const toRadians = (deg) => deg * Math.PI / 180;
+      const toDegrees = (rad) => rad * 180 / Math.PI;
+      
+      const dLon = toRadians(lon2 - lon1);
+      const lat1Rad = toRadians(lat1);
+      const lat2Rad = toRadians(lat2);
+      
+      const y = Math.sin(dLon) * Math.cos(lat2Rad);
+      const x = Math.cos(lat1Rad) * Math.sin(lat2Rad) -
+              Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(dLon);
+      
+      let bearing = toDegrees(Math.atan2(y, x));
+      return (bearing + 360) % 360;
+    }
+
+    function calculateDistance(lat1, lon1, lat2, lon2) {
+      const R = 6371e3;
+      const toRadians = (deg) => deg * Math.PI / 180;
+      
+      const φ1 = toRadians(lat1);
+      const φ2 = toRadians(lat2);
+      const Δφ = toRadians(lat2 - lat1);
+      const Δλ = toRadians(lon2 - lon1);
+      
+      const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ/2) * Math.sin(Δλ/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      
+      return R * c;
+    }
+
+    function findNearestWaypoint() {
+      if (!currentPosition || routeWaypoints.length === 0) {
+        return currentWaypointIndex;
+      }
+      
+      let nearestIndex = currentWaypointIndex;
+      let nearestDistance = Infinity;
+      
+      for (let i = currentWaypointIndex; i < routeWaypoints.length; i++) {
+        const wp = routeWaypoints[i];
+        const dist = calculateDistance(
+          currentPosition.lat,
+          currentPosition.lon,
+          wp.lat,
+          wp.lon
+        );
+        
+        if (dist < nearestDistance) {
+          nearestDistance = dist;
+          nearestIndex = i;
+        }
+      }
+      
+      if (nearestIndex > currentWaypointIndex) {
+        logStatus(`⚡ Skipping to closer waypoint ${nearestIndex + 1} (${Math.round(nearestDistance)}m away)`);
+        return nearestIndex;
+      }
+      
+      return currentWaypointIndex;
+    }
+
+    function smoothArrowRotation(targetRotation) {
+      let diff = targetRotation - lastArrowRotation;
+      
+      if (diff > 180) diff -= 360;
+      if (diff < -180) diff += 360;
+      
+      lastArrowRotation = lastArrowRotation + diff * ARROW_SMOOTHING_FACTOR;
+      
+      lastArrowRotation = (lastArrowRotation + 360) % 360;
+      if (lastArrowRotation > 180) lastArrowRotation -= 360;
+      
+      return lastArrowRotation;
+    }
+
+    function testArrow() {
+      const navArrow = document.getElementById('nav-arrow');
+      const arrowRotator = document.getElementById('arrow-rotator');
+      
+      navArrow.setAttribute('visible', 'true');
+      arrowRotator.setAttribute('rotation', '0 0 0');
+      
+      document.getElementById('compass-debug').style.display = 'block';
+      
+      logStatus('Test arrow visible - Points forward');
+      
+      if (updateInterval) clearInterval(updateInterval);
+      if (animationFrameId) cancelAnimationFrame(animationFrameId); // Stop nav loop if running
+      
+      function animateTestArrow() {
+        const relativeBearing = 0 - smoothedCompassHeading;
+        const smoothed = smoothArrowRotation(relativeBearing);
+        arrowRotator.setAttribute('rotation', `0 ${smoothed} 0`);
+        document.getElementById('arrow-rotation').textContent = Math.round(smoothed);
+        document.getElementById('smoothing-info').textContent = 
+          `Samples: ${compassReadings.length}, Smoothed: ${Math.round(smoothedCompassHeading)}°`;
+        
+        animationFrameId = requestAnimationFrame(animateTestArrow);
+      }
+      
+      animateTestArrow();
+    }
+
+    async function fetchRoute(destLat, destLon) {
+      if (!currentPosition) {
+        alert('Waiting for GPS position...');
+        return null;
+      }
+      
+      logStatus('Fetching route from Mapbox...');
+      
+      const startCoords = `${currentPosition.lon},${currentPosition.lat}`;
+      const endCoords = `${destLon},${destLat}`;
+      
+      const url = `https://api.mapbox.com/directions/v5/mapbox/walking/${startCoords};${endCoords}?geometries=geojson&steps=true&access_token=${MAPBOX_TOKEN}`;
+      
+      try {
+        const response = await fetch(url);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.routes && data.routes.length > 0) {
+          logStatus('✓ Route fetched successfully');
+          return data.routes[0];
+        } else {
+          logStatus('No route found');
+          return null;
+        }
+      } catch (error) {
+        logStatus(`Error fetching route: ${error.message}`);
+        return null;
+      }
+    }
+
+    function extractWaypoints(route) {
+      const coordinates = route.geometry.coordinates;
+      const waypoints = [];
+      
+      const stepSize = Math.max(1, Math.floor(coordinates.length / 30));
+      
+      for (let i = 0; i < coordinates.length; i += stepSize) {
+        waypoints.push({
+          lon: coordinates[i][0],
+          lat: coordinates[i][1]
+        });
+      }
+      
+      if (coordinates.length > 0) {
+        const last = coordinates[coordinates.length - 1];
+        if (waypoints.length === 0 || 
+            waypoints[waypoints.length - 1].lon !== last[0] || 
+            waypoints[waypoints.length - 1].lat !== last[1]) {
+          waypoints.push({
+            lon: last[0],
+            lat: last[1]
+          });
+        }
+      }
+      
+      return waypoints;
+    }
+
+    function updateNavigationArrow() {
+      if (!currentPosition || !navigationActive || routeWaypoints.length === 0) {
+        return;
+      }
+      
+      const navArrow = document.getElementById('nav-arrow');
+      const arrowRotator = document.getElementById('arrow-rotator');
+      
+      if (!navArrow || !arrowRotator) {
+        return;
+      }
+
+      currentWaypointIndex = findNearestWaypoint();
+      
+      if (currentWaypointIndex >= routeWaypoints.length) {
+        return; // Should not happen, but a good safeguard
+      }
+
+      const nextWaypoint = routeWaypoints[currentWaypointIndex];
+      const distance = calculateDistance(
+        currentPosition.lat,
+        currentPosition.lon,
+        nextWaypoint.lat,
+        nextWaypoint.lon
+      );
+
+      if (currentWaypointIndex === routeWaypoints.length - 1) {
+        if (distance < DESTINATION_REACHED_THRESHOLD) {
+          logStatus('🎉 Destination reached!');
+          document.getElementById('instructions').style.display = 'none';
+          document.getElementById('destination-reached-overlay').style.display = 'flex';
+          stopNavigation();
+          return;
+        }
+      } else {
+        if (distance < WAYPOINT_REACHED_THRESHOLD) {
+          logStatus(`✓ Waypoint ${currentWaypointIndex + 1} reached`);
+          currentWaypointIndex++;
+          return; 
+        }
+      }
+
+      const targetBearing = calculateBearing(
+        currentPosition.lat,
+        currentPosition.lon,
+        nextWaypoint.lat,
+        nextWaypoint.lon
+      );
+
+      let relativeBearing = targetBearing - smoothedCompassHeading;
+      
+      if (relativeBearing > 180) relativeBearing -= 360;
+      if (relativeBearing < -180) relativeBearing += 360;
+      
+      const smoothedRotation = smoothArrowRotation(relativeBearing);
+      
+      arrowRotator.setAttribute('rotation', `0 ${smoothedRotation} 0`);
+      navArrow.setAttribute('visible', 'true');
+
+      const instructionText = document.getElementById('instruction-text');
+      const isLastWaypoint = currentWaypointIndex === routeWaypoints.length - 1;
+      instructionText.textContent = isLastWaypoint 
+        ? `${Math.round(distance)}m to DESTINATION` 
+        : `${Math.round(distance)}m to waypoint ${currentWaypointIndex + 1}/${routeWaypoints.length}`;
+      
+      document.getElementById('target-bearing').textContent = Math.round(targetBearing);
+      document.getElementById('arrow-rotation').textContent = Math.round(smoothedRotation);
+      document.getElementById('waypoint-info').textContent = `${currentWaypointIndex + 1}/${routeWaypoints.length}`;
+      document.getElementById('distance-info').textContent = Math.round(distance);
+      document.getElementById('smoothing-info').textContent = 
+        `Compass avg: ${compassReadings.length} samples`;
+    }
+
+    async function startNavigation() {
+      const destInput = document.getElementById('destination').value.trim();
+      
+      if (!destInput) {
+        alert('Please enter a destination');
+        return;
+      }
+      
+      const [lat, lon] = destInput.split(',').map(s => parseFloat(s.trim()));
+      
+      if (isNaN(lat) || isNaN(lon)) {
+        alert('Invalid coordinates');
+        return;
+      }
+      
+      finalDestination = { lat, lon };
+      logStatus('🚀 Starting navigation...');
+      
+      if (!currentPosition) {
+        logStatus('⏳ Waiting for GPS lock...');
+        setTimeout(startNavigation, 2000);
+        return;
+      }
+      
+      // *** IMPROVEMENT: Loop Safety ***
+      // Stop any other loops (like testArrow) before starting
+      if (animationFrameId) cancelAnimationFrame(animationFrameId);
+
+      const route = await fetchRoute(lat, lon);
+      
+      if (!route) {
+        logStatus("❌ Failed to get route.");
+        return;
+      }
+      
+      routeWaypoints = extractWaypoints(route);
+      currentWaypointIndex = 0;
+      lastArrowRotation = 0; // Reset smoothing
+      
+      if (routeWaypoints.length === 0) {
+        logStatus("❌ No waypoints extracted.");
+        return;
+      }
+      
+      logStatus(`✓ Route: ${routeWaypoints.length} waypoints, ${Math.round(route.distance)}m total`);
+      
+      document.getElementById('instructions').style.display = 'block';
+      document.getElementById('compass-debug').style.display = 'block';
+      navigationActive = true;
+      
+      if (updateInterval) clearInterval(updateInterval); // Clear old interval if any
+      
+      function animateNavigation() {
+        if (navigationActive) {
+          updateNavigationArrow();
+          animationFrameId = requestAnimationFrame(animateNavigation);
+        }
+      }
+      
+      animateNavigation();
+    }
+
+    function stopNavigation() {
+      navigationActive = false;
+      currentWaypointIndex = 0;
+      routeWaypoints = [];
+      finalDestination = null;
+      
+      if (updateInterval) {
+        clearInterval(updateInterval);
+        updateInterval = null;
+      }
+      
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
+      }
+      
+      const navArrow = document.getElementById('nav-arrow');
+      if (navArrow) {
+        navArrow.setAttribute('visible', 'false');
+      }
+      
+      document.getElementById('instructions').style.display = 'none';
+      document.getElementById('destination-reached-overlay').style.display = 'none';
+      document.getElementById('compass-debug').style.display = 'none';
+      
+      logStatus('Navigation stopped');
+    }
+
+    window.addEventListener('load', () => {
+      logStatus('🚀 App loaded. Initializing sensors...');
+      startPositionTracking();
+      startCompassTracking();
+      
+      setTimeout(() => {
+        document.getElementById('controls').classList.add('collapsed');
+      }, 5000);
+    });
+  </script>
+  
+</body>
+</html>
