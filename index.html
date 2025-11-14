@@ -168,7 +168,7 @@
   </div>
 
   <div id="destination-reached-overlay">
-    <h1>🎉 Destination Reached!</h1>
+    <h1>Destination Reached!</h1>
     <p>You have arrived at your location.</p>
     <button onclick="stopNavigation()">Exit Navigation</button>
   </div>
@@ -181,41 +181,16 @@
     <a-camera id="camera" gps-camera rotation-reader>
       <a-entity id="nav-arrow" position="0 -0.5 -2.5" visible="false">
         <a-entity id="arrow-rotator" rotation="0 0 0">
+          
           <a-cone 
-            position="0 0 -0.5"
             rotation="-90 0 0"
-            radius-bottom="0.4"
+            radius-bottom="0.5"
             radius-top="0"
-            height="1.2"
+            height="1.5"
             color="#FF0000"
             material="shader: flat; opacity: 0.9"
           ></a-cone>
-          
-          <a-cylinder
-            position="0 0 0.3"
-            radius="0.15"
-            height="0.8"
-            color="#FF0000"
-            material="shader: flat; opacity: 0.9"
-          ></a-cylinder>
-          
-          <a-sphere
-            id="arrow-tip"
-            position="0 0 -1.1"
-            radius="0.25"
-            color="#FFFF00"
-            material="shader: flat; emissive: #FFFF00; emissiveIntensity: 0.5"
-            animation="property: scale; to: 1.2 1.2 1.2; dur: 1000; dir: alternate; loop: true; easing: easeInOutQuad"
-          ></a-sphere>
-          
-          <a-torus
-            position="0 0 -0.5"
-            rotation="90 0 0"
-            radius="0.5"
-            radius-tubular="0.05"
-            color="#FF6600"
-            material="shader: flat; opacity: 0.6"
-          ></a-torus>
+
         </a-entity>
       </a-entity>
     </a-camera>
@@ -233,9 +208,6 @@
     const WAYPOINT_REACHED_THRESHOLD = 15; // meters
     const DESTINATION_REACHED_THRESHOLD = 10; // meters
     
-    // *** IMPROVEMENT: Removed unused variable ***
-    // const OFF_ROUTE_THRESHOLD = 50; 
-    
     // Sensor smoothing
     let compassReadings = [];
     const COMPASS_SMOOTHING_SAMPLES = 5;
@@ -252,7 +224,7 @@
 
     const MAPBOX_TOKEN = "pk.eyJ1IjoiYXJ5YW5kb25sb25kb24iLCJhIjoiY21odzlnbm90MDA2eTJqcXZkamtxajdjOCJ9.bqShLStraxUBB1ANLi-6ZQ";
 
-    // --- Your excellent UI, Sensor, and Math functions are unchanged ---
+    // --- All Emojis removed from logStatus messages ---
     
     function togglePanel() {
       const controls = document.getElementById('controls');
@@ -414,7 +386,7 @@
       }
       
       if (nearestIndex > currentWaypointIndex) {
-        logStatus(`⚡ Skipping to closer waypoint ${nearestIndex + 1} (${Math.round(nearestDistance)}m away)`);
+        logStatus(`Skipping to closer waypoint ${nearestIndex + 1} (${Math.round(nearestDistance)}m away)`);
         return nearestIndex;
       }
       
@@ -486,7 +458,7 @@
         const data = await response.json();
         
         if (data.routes && data.routes.length > 0) {
-          logStatus('✓ Route fetched successfully');
+          logStatus('Route fetched successfully');
           return data.routes[0];
         } else {
           logStatus('No route found');
@@ -541,7 +513,7 @@
       currentWaypointIndex = findNearestWaypoint();
       
       if (currentWaypointIndex >= routeWaypoints.length) {
-        return; // Should not happen, but a good safeguard
+        return; // Safeguard
       }
 
       const nextWaypoint = routeWaypoints[currentWaypointIndex];
@@ -554,7 +526,7 @@
 
       if (currentWaypointIndex === routeWaypoints.length - 1) {
         if (distance < DESTINATION_REACHED_THRESHOLD) {
-          logStatus('🎉 Destination reached!');
+          logStatus('Destination reached!');
           document.getElementById('instructions').style.display = 'none';
           document.getElementById('destination-reached-overlay').style.display = 'flex';
           stopNavigation();
@@ -562,7 +534,7 @@
         }
       } else {
         if (distance < WAYPOINT_REACHED_THRESHOLD) {
-          logStatus(`✓ Waypoint ${currentWaypointIndex + 1} reached`);
+          logStatus(`Waypoint ${currentWaypointIndex + 1} reached`);
           currentWaypointIndex++;
           return; 
         }
@@ -615,22 +587,20 @@
       }
       
       finalDestination = { lat, lon };
-      logStatus('🚀 Starting navigation...');
+      logStatus('Starting navigation...');
       
       if (!currentPosition) {
-        logStatus('⏳ Waiting for GPS lock...');
+        logStatus('Waiting for GPS lock...');
         setTimeout(startNavigation, 2000);
         return;
       }
       
-      // *** IMPROVEMENT: Loop Safety ***
-      // Stop any other loops (like testArrow) before starting
       if (animationFrameId) cancelAnimationFrame(animationFrameId);
 
       const route = await fetchRoute(lat, lon);
       
       if (!route) {
-        logStatus("❌ Failed to get route.");
+        logStatus("Failed to get route.");
         return;
       }
       
@@ -639,11 +609,11 @@
       lastArrowRotation = 0; // Reset smoothing
       
       if (routeWaypoints.length === 0) {
-        logStatus("❌ No waypoints extracted.");
+        logStatus("No waypoints extracted.");
         return;
       }
       
-      logStatus(`✓ Route: ${routeWaypoints.length} waypoints, ${Math.round(route.distance)}m total`);
+      logStatus(`Route: ${routeWaypoints.length} waypoints, ${Math.round(route.distance)}m total`);
       
       document.getElementById('instructions').style.display = 'block';
       document.getElementById('compass-debug').style.display = 'block';
@@ -690,7 +660,7 @@
     }
 
     window.addEventListener('load', () => {
-      logStatus('🚀 App loaded. Initializing sensors...');
+      logStatus('App loaded. Initializing sensors...');
       startPositionTracking();
       startCompassTracking();
       
